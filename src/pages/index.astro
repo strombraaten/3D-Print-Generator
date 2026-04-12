@@ -1,0 +1,45 @@
+---
+import "@/styles/global.css"
+import { ModeToggle } from "@/components/ModeToggle"
+import { HookDesigner } from "@/components/HookDesigner"
+---
+
+<html lang="nb">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Parametrisk 3D-designer for gitternett-kroker" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Gitternett-krok</title>
+    <script is:inline>
+      const getThemePreference = () => {
+        if (typeof localStorage !== "undefined" && localStorage.getItem("theme")) {
+          return localStorage.getItem("theme")
+        }
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      }
+      const isDark = getThemePreference() === "dark"
+      document.documentElement.classList[isDark ? "add" : "remove"]("dark")
+    </script>
+  </head>
+  <body class="h-svh flex flex-col overflow-hidden">
+
+    <header class="sticky top-0 z-10 shrink-0 border-b border-border bg-card">
+      <div class="flex h-12 items-center justify-between px-4">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold tracking-tight">Gitternett-krok</span>
+          <span class="hidden text-xs text-muted-foreground sm:inline">
+            Parametrisk krokedesigner for gridbod
+          </span>
+        </div>
+        <ModeToggle client:load />
+      </div>
+    </header>
+
+    <main class="flex-1 overflow-hidden">
+      <!-- client:only skips SSR — required because Three.js accesses window/document on import -->
+      <HookDesigner client:only="react" />
+    </main>
+
+  </body>
+</html>
