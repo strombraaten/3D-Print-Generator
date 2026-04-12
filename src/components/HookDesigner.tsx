@@ -180,12 +180,12 @@ export function HookDesigner() {
 
   function handleExportSTL() {
     const geo = buildHookGeometry(params)
-    exportSTL(geo, "gitternett_krok.stl")
+    exportSTL(geo, "3d_print_generator.stl")
   }
 
   async function handleExport3MF() {
     const geo = buildHookGeometry(params)
-    await export3MF(geo, "gitternett_krok.3mf", params)
+    await export3MF(geo, "3d_print_generator.3mf", params)
   }
 
   return (
