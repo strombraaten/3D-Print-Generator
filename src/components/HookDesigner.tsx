@@ -16,7 +16,6 @@ function HookMesh({ params, center }: { params: HookParams; center: THREE.Vector
   }, [geometry])
 
   // Offset the mesh so its bounding-box centre sits at world origin.
-  // This keeps OrbitControls orbiting the hook instead of the wire slot.
   // Geometry coordinates are untouched so export values stay correct.
   return (
     <mesh
@@ -32,6 +31,8 @@ function HookMesh({ params, center }: { params: HookParams; center: THREE.Vector
 
 // ─── Wire Preview ─────────────────────────────────────────────────────────────
 
+const GRID_SPACING = 54 // outer wire-centre to wire-centre distance (mm)
+
 function WirePreview({
   wireDiameter,
   width,
@@ -44,25 +45,24 @@ function WirePreview({
   show: boolean
 }) {
   if (!show) return null
-  // Visualise the grid wire as a cylinder along X (the extrusion/width axis).
-  // Position is offset to stay inside the slot even after the hook is centred.
   return (
-    <mesh
-      rotation={[0, 0, Math.PI / 2]}
-      position={[-offset.x, -offset.y, -offset.z]}
-    >
-      <cylinderGeometry args={[wireDiameter / 2, wireDiameter / 2, width * 2, 16]} />
-      <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
-    </mesh>
+    <>
+      {/* Top wire — gripped by the J-clip */}
+      <mesh rotation={[0, 0, Math.PI / 2]} position={[-offset.x, -offset.y, -offset.z]}>
+        <cylinderGeometry args={[wireDiameter / 2, wireDiameter / 2, width * 2, 16]} />
+        <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
+      </mesh>
+      {/* Lower wire — body bottom rests on this */}
+      <mesh rotation={[0, 0, Math.PI / 2]} position={[-offset.x, -offset.y - GRID_SPACING, -offset.z]}>
+        <cylinderGeometry args={[wireDiameter / 2, wireDiameter / 2, width * 2, 16]} />
+        <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
+      </mesh>
+    </>
   )
 }
 
 // ─── Scene ────────────────────────────────────────────────────────────────────
 
-// Forces OrbitControls to orient the camera toward its target on mount.
-// We use `get()` inside the effect — not `useThree()` at render time — because
-// OrbitControls.makeDefault writes the controls instance to the R3F store via
-// its own useEffect (earlier sibling). `get()` reads the live state at run-time.
 function ControlsInit() {
   const get = useThree((s) => s.get)
   React.useEffect(() => {
@@ -81,7 +81,6 @@ function ControlsInit() {
 }
 
 function Scene({ params, showWire }: { params: HookParams; showWire: boolean }) {
-  // Compute bounding box center once so both mesh and wire share the same offset
   const center = React.useMemo(() => {
     const geo = buildHookGeometry(params)
     geo.computeBoundingBox()
@@ -127,16 +126,19 @@ function Scene({ params, showWire }: { params: HookParams; showWire: boolean }) 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function HookDesigner() {
-  // Leva control panel — mirrors the parameter set from the standalone HTML
   const [
     {
       wireDiameter,
       tolerance,
       wallThickness,
       hookHeight,
+      bodyLength,
+      clipDepth,
       armLength,
       armThickness,
+      armMountHeight,
       width,
+      stopperEnabled,
       stopperHeight,
       stopperThickness,
       showWire,
@@ -146,19 +148,23 @@ export function HookDesigner() {
     "Grid wire": folder({
       wireDiameter: { value: DEFAULT_PARAMS.wireDiameter, min: 2, max: 8, step: 0.5, label: "Diameter (mm)" },
       tolerance: { value: DEFAULT_PARAMS.tolerance, min: 0, max: 2, step: 0.1, label: "Toleranse (mm)" },
+      clipDepth: { value: DEFAULT_PARAMS.clipDepth, min: 6, max: 30, step: 1, label: "Klype-dybde (mm)" },
     }),
     "Hook body": folder({
       wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 1.5, max: 8, step: 0.5, label: "Veggtykkelse (mm)" },
-      hookHeight: { value: DEFAULT_PARAMS.hookHeight, min: 15, max: 80, step: 1, label: "Høyde (mm)" },
+      hookHeight: { value: DEFAULT_PARAMS.hookHeight, min: 5, max: 30, step: 1, label: "Klyp-høyde (mm)" },
+      bodyLength: { value: DEFAULT_PARAMS.bodyLength, min: 20, max: 120, step: 1, label: "Kropp-lengde (mm)" },
       width: { value: DEFAULT_PARAMS.width, min: 10, max: 80, step: 1, label: "Bredde (mm)" },
     }),
     "Arm": folder({
       armLength: { value: DEFAULT_PARAMS.armLength, min: 10, max: 120, step: 1, label: "Lengde (mm)" },
       armThickness: { value: DEFAULT_PARAMS.armThickness, min: 3, max: 20, step: 0.5, label: "Tykkelse (mm)" },
+      armMountHeight: { value: DEFAULT_PARAMS.armMountHeight, min: 10, max: 80, step: 1, label: "Brakett-høyde (mm)" },
     }),
     "Stopper": folder({
-      stopperHeight: { value: DEFAULT_PARAMS.stopperHeight, min: 0, max: 20, step: 0.5, label: "Høyde (mm)" },
-      stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 0, max: 10, step: 0.5, label: "Tykkelse (mm)" },
+      stopperEnabled: { value: DEFAULT_PARAMS.stopperEnabled, label: "Stopper" },
+      stopperHeight: { value: DEFAULT_PARAMS.stopperHeight, min: 2, max: 20, step: 0.5, label: "Høyde (mm)" },
+      stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 1, max: 10, step: 0.5, label: "Tykkelse (mm)" },
     }),
     "Visning": folder({
       showWire: { value: true, label: "Vis tråd" },
@@ -171,9 +177,13 @@ export function HookDesigner() {
     tolerance,
     wallThickness,
     hookHeight,
+    bodyLength,
+    clipDepth,
     armLength,
     armThickness,
+    armMountHeight,
     width,
+    stopperEnabled,
     stopperHeight,
     stopperThickness,
   }
