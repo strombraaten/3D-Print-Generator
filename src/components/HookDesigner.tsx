@@ -51,13 +51,10 @@ function GridPreview({
     const xLeft = -width / 2
     const xRight =  width / 2
 
-    // rowMax = 0: J-clip always grips the wire at grid row 0 (Y=0).
-    // ceil (not floor) ensures we only show wires that fall within the hook's body length —
-    // e.g. bodyLength=120 with gridOuter=54 → rows -2,-1,0 (wires at 0,-54,-108), not -3.
+    // rowMax = 0: the gripped wire always sits at grid row 0 (Y=0).
     const rowMin = Math.ceil(yBot / gridOuter)
     const rowMax = 0
     // Columns offset by half a spacing so the hook sits between vertical wires, not on one.
-    // Column k is at X = (k + 0.5) * gridOuter; find the k range that brackets the hook width.
     const colMin = Math.floor(xLeft / gridOuter - 0.5)
     const colMax = Math.ceil(xRight / gridOuter - 0.5)
 
@@ -174,14 +171,14 @@ export function HookDesigner() {
     {
       wireDiameter,
       tolerance,
-      wallThickness,
-      hookHeight,
-      bodyLength,
-      clipDepth,
-      armLength,
-      armThickness,
-      armMountHeight,
       width,
+      wallThickness,
+      clipWallThickness,
+      clipCapHeight,
+      clipOpeningDepth,
+      bodyLength,
+      armLength,
+      armTopOffset,
       stopperEnabled,
       stopperHeight,
       stopperThickness,
@@ -190,27 +187,29 @@ export function HookDesigner() {
     },
     set,
   ] = useControls(() => ({
-    "Grid wire": folder({
+    "Gitterwire": folder({
       wireDiameter: { value: DEFAULT_PARAMS.wireDiameter, min: 2, max: 8, step: 0.5, label: "Diameter (mm)" },
       tolerance: { value: DEFAULT_PARAMS.tolerance, min: 0, max: 2, step: 0.1, label: "Toleranse (mm)" },
-      clipDepth: { value: DEFAULT_PARAMS.clipDepth, min: 6, max: 30, step: 1, label: "Klype-dybde (mm)" },
       gridOuter: { value: 54, min: 40, max: 80, step: 0.5, label: "Rutestørrelse (mm)" },
     }),
-    "Hook body": folder({
-      wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 1.5, max: 8, step: 0.5, label: "Veggtykkelse (mm)" },
-      hookHeight: { value: DEFAULT_PARAMS.hookHeight, min: 5, max: 30, step: 1, label: "Klyp-høyde (mm)" },
-      bodyLength: { value: DEFAULT_PARAMS.bodyLength, min: 20, max: 120, step: 1, label: "Kropp-lengde (mm)" },
+    "J-klype": folder({
+      clipWallThickness: { value: DEFAULT_PARAMS.clipWallThickness, min: 2, max: 12, step: 0.5, label: "Yttervegg (mm)" },
+      clipCapHeight: { value: DEFAULT_PARAMS.clipCapHeight, min: 4, max: 20, step: 0.5, label: "Topphøyde (mm)" },
+      clipOpeningDepth: { value: DEFAULT_PARAMS.clipOpeningDepth, min: 5, max: 25, step: 0.5, label: "Åpning nedover (mm)" },
+    }),
+    "Kropp": folder({
+      wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 2, max: 12, step: 0.5, label: "Bakvegg (mm)" },
+      bodyLength: { value: DEFAULT_PARAMS.bodyLength, min: 40, max: 150, step: 1, label: "Høyde (mm)" },
       width: { value: DEFAULT_PARAMS.width, min: 10, max: 80, step: 1, label: "Bredde (mm)" },
     }),
     "Arm": folder({
-      armLength: { value: DEFAULT_PARAMS.armLength, min: 10, max: 120, step: 1, label: "Lengde (mm)" },
-      armThickness: { value: DEFAULT_PARAMS.armThickness, min: 3, max: 20, step: 0.5, label: "Tykkelse (mm)" },
-      armMountHeight: { value: DEFAULT_PARAMS.armMountHeight, min: 10, max: 80, step: 1, label: "Brakett-høyde (mm)" },
+      armLength: { value: DEFAULT_PARAMS.armLength, min: 30, max: 200, step: 1, label: "Lengde (mm)" },
+      armTopOffset: { value: DEFAULT_PARAMS.armTopOffset, min: 15, max: 80, step: 1, label: "Arm-høyde (mm)" },
     }),
     "Stopper": folder({
-      stopperEnabled: { value: DEFAULT_PARAMS.stopperEnabled, label: "Stopper" },
-      stopperHeight: { value: DEFAULT_PARAMS.stopperHeight, min: 2, max: 20, step: 0.5, label: "Høyde (mm)" },
-      stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 1, max: 10, step: 0.5, label: "Tykkelse (mm)" },
+      stopperEnabled: { value: DEFAULT_PARAMS.stopperEnabled, label: "På" },
+      stopperHeight: { value: DEFAULT_PARAMS.stopperHeight, min: 2, max: 25, step: 0.5, label: "Høyde (mm)" },
+      stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 2, max: 15, step: 0.5, label: "Tykkelse (mm)" },
     }),
     "Visning": folder({
       showGrid: { value: true, label: "Vis rutenett" },
@@ -221,14 +220,14 @@ export function HookDesigner() {
   const params: HookParams = {
     wireDiameter,
     tolerance,
-    wallThickness,
-    hookHeight,
-    bodyLength,
-    clipDepth,
-    armLength,
-    armThickness,
-    armMountHeight,
     width,
+    wallThickness,
+    clipWallThickness,
+    clipCapHeight,
+    clipOpeningDepth,
+    bodyLength,
+    armLength,
+    armTopOffset,
     stopperEnabled,
     stopperHeight,
     stopperThickness,
