@@ -34,6 +34,8 @@ export interface HookParams {
   stopperEnabled: boolean   // whether the arm tip has an upward lip
   stopperHeight: number     // stopper height above arm top (mm)
   stopperThickness: number  // stopper Z thickness, measured inward from arm-tip outer (mm)
+  holeEnabled: boolean      // whether the wedge brace has a cut-through hole
+  holeMargin: number        // wall thickness around the hole = inset from wedge edges (mm)
 }
 
 export const DEFAULT_PARAMS: HookParams = {
@@ -50,6 +52,8 @@ export const DEFAULT_PARAMS: HookParams = {
   stopperEnabled: true,
   stopperHeight: 10,
   stopperThickness: 6,
+  holeEnabled: true,
+  holeMargin: 6,
 }
 
 /**
@@ -72,6 +76,8 @@ export function buildHookGeometry(params: HookParams): THREE.BufferGeometry {
     stopperEnabled:    params.stopperEnabled    ?? d.stopperEnabled,
     stopperHeight:     params.stopperHeight     ?? d.stopperHeight,
     stopperThickness:  params.stopperThickness  ?? d.stopperThickness,
+    holeEnabled:       params.holeEnabled       ?? d.holeEnabled,
+    holeMargin:        params.holeMargin        ?? d.holeMargin,
   }
 
   const wg        = p.wireDiameter / 2 + p.tolerance
@@ -119,6 +125,37 @@ export function buildHookGeometry(params: HookParams): THREE.BufferGeometry {
   shape.lineTo(zBackIn, yCapTop)           // L
 
   shape.closePath()                        // L → A along horizontal top
+
+  // Cut-through hole: triangular inset of the wedge brace, carved through the
+  // whole width. The wedge is bounded by the arm top (Y=yArmTop), the back-wall
+  // inner face (Z=zBackIn), and the diagonal from F to G. We offset each edge
+  // inward by holeMargin and intersect them to get the hole's three corners.
+  if (p.holeEnabled) {
+    const m   = p.holeMargin
+    const dz  = zArmTip - zBackOut
+    const dy  = yArmTop - yBodyBot
+    const len = Math.hypot(dz, dy)
+    // Inward-normal (up-left) component of the m-offset on the diagonal:
+    const nz = -m * dy / len
+    const ny =  m * dz / len
+    // Point on the offset diagonal, used to parametrise it:
+    const oz = zBackOut + nz
+    const oy = yBodyBot + ny
+
+    const p1z = zBackIn + m
+    const p1y = yArmTop - m
+    const p2z = oz + dz * (p1y - oy) / dy        // inset-top  ∩ inset-diagonal
+    const p3y = oy + dy * (p1z - oz) / dz        // inset-left ∩ inset-diagonal
+
+    if (p2z > p1z + 1 && p3y < p1y - 1) {
+      const hole = new THREE.Path()
+      hole.moveTo(p1z, p1y)
+      hole.lineTo(p2z, p1y)
+      hole.lineTo(p1z, p3y)
+      hole.closePath()
+      shape.holes.push(hole)
+    }
+  }
 
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: p.width,

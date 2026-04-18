@@ -182,6 +182,8 @@ export function HookDesigner() {
       stopperEnabled,
       stopperHeight,
       stopperThickness,
+      holeEnabled,
+      holeMargin,
       showGrid,
       gridOuter,
     },
@@ -211,6 +213,10 @@ export function HookDesigner() {
       stopperHeight: { value: DEFAULT_PARAMS.stopperHeight, min: 2, max: 25, step: 0.5, label: "Høyde (mm)" },
       stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 2, max: 15, step: 0.5, label: "Tykkelse (mm)" },
     }),
+    "Sparehull": folder({
+      holeEnabled: { value: DEFAULT_PARAMS.holeEnabled, label: "På" },
+      holeMargin: { value: DEFAULT_PARAMS.holeMargin, min: 2, max: 15, step: 0.5, label: "Margin (mm)" },
+    }),
     "Visning": folder({
       showGrid: { value: true, label: "Vis rutenett" },
     }),
@@ -231,6 +237,8 @@ export function HookDesigner() {
     stopperEnabled,
     stopperHeight,
     stopperThickness,
+    holeEnabled,
+    holeMargin,
   }
 
   function handleExportSTL() {
