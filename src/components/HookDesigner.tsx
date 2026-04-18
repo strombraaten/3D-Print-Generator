@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Canvas, useThree } from "@react-three/fiber"
-import { OrbitControls, Grid } from "@react-three/drei"
+import { OrbitControls } from "@react-three/drei"
 import { useControls, button, folder } from "leva"
 import * as THREE from "three"
 import { buildHookGeometry, DEFAULT_PARAMS, type HookParams } from "@/lib/hookGeometry"
@@ -29,34 +29,81 @@ function HookMesh({ params, center }: { params: HookParams; center: THREE.Vector
   )
 }
 
-// ─── Wire Preview ─────────────────────────────────────────────────────────────
+// ─── Grid Preview ─────────────────────────────────────────────────────────────
 
-const GRID_SPACING = 54 // outer wire-centre to wire-centre distance (mm)
-
-function WirePreview({
-  wireDiameter,
+function GridPreview({
+  bodyLength,
   width,
+  wireDiameter,
   offset,
+  gridOuter,
   show,
 }: {
-  wireDiameter: number
+  bodyLength: number
   width: number
+  wireDiameter: number
   offset: THREE.Vector3
+  gridOuter: number
   show: boolean
 }) {
+  const { rows, cols, xMin, xMax, yMin, yMax, z } = React.useMemo(() => {
+    const yBot  = -bodyLength
+    const xLeft = -width / 2
+    const xRight =  width / 2
+
+    // rowMax = 0: J-clip always grips the wire at grid row 0 (Y=0).
+    // ceil (not floor) ensures we only show wires that fall within the hook's body length —
+    // e.g. bodyLength=120 with gridOuter=54 → rows -2,-1,0 (wires at 0,-54,-108), not -3.
+    const rowMin = Math.ceil(yBot / gridOuter)
+    const rowMax = 0
+    // Columns offset by half a spacing so the hook sits between vertical wires, not on one.
+    // Column k is at X = (k + 0.5) * gridOuter; find the k range that brackets the hook width.
+    const colMin = Math.floor(xLeft / gridOuter - 0.5)
+    const colMax = Math.ceil(xRight / gridOuter - 0.5)
+
+    const rows = Array.from({ length: rowMax - rowMin + 1 }, (_, i) => ({
+      key: `h-${rowMin + i}`,
+      y: (rowMin + i) * gridOuter - offset.y,
+    }))
+    const cols = Array.from({ length: colMax - colMin + 1 }, (_, i) => ({
+      key: `v-${colMin + i}`,
+      x: (colMin + i + 0.5) * gridOuter - offset.x,
+    }))
+
+    return {
+      rows,
+      cols,
+      xMin: cols[0].x,
+      xMax: cols[cols.length - 1].x,
+      yMin: rows[0].y,
+      yMax: rows[rows.length - 1].y,
+      z: -offset.z,
+    }
+  }, [bodyLength, width, offset, gridOuter])
+
   if (!show) return null
+
+  const r = wireDiameter / 2
+  const EXTEND = 150
+  const hLen = xMax - xMin + 2 * EXTEND
+  const vLen = yMax - yMin + 2 * EXTEND
+  const hCenterX = (xMin + xMax) / 2
+  const vCenterY = (yMin + yMax) / 2
+
   return (
     <>
-      {/* Top wire — gripped by the J-clip */}
-      <mesh rotation={[0, 0, Math.PI / 2]} position={[-offset.x, -offset.y, -offset.z]}>
-        <cylinderGeometry args={[wireDiameter / 2, wireDiameter / 2, width * 2, 16]} />
-        <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
-      </mesh>
-      {/* Lower wire — body bottom rests on this */}
-      <mesh rotation={[0, 0, Math.PI / 2]} position={[-offset.x, -offset.y - GRID_SPACING, -offset.z]}>
-        <cylinderGeometry args={[wireDiameter / 2, wireDiameter / 2, width * 2, 16]} />
-        <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
-      </mesh>
+      {rows.map(({ key, y }) => (
+        <mesh key={key} rotation={[0, 0, Math.PI / 2]} position={[hCenterX, y, z]}>
+          <cylinderGeometry args={[r, r, hLen, 16]} />
+          <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
+        </mesh>
+      ))}
+      {cols.map(({ key, x }) => (
+        <mesh key={key} position={[x, vCenterY, z]}>
+          <cylinderGeometry args={[r, r, vLen, 16]} />
+          <meshStandardMaterial color="#888" metalness={0.8} roughness={0.2} />
+        </mesh>
+      ))}
     </>
   )
 }
@@ -80,7 +127,15 @@ function ControlsInit() {
   return null
 }
 
-function Scene({ params, showWire }: { params: HookParams; showWire: boolean }) {
+function Scene({
+  params,
+  showGrid,
+  gridOuter,
+}: {
+  params: HookParams
+  showGrid: boolean
+  gridOuter: number
+}) {
   const center = React.useMemo(() => {
     const geo = buildHookGeometry(params)
     geo.computeBoundingBox()
@@ -100,24 +155,13 @@ function Scene({ params, showWire }: { params: HookParams; showWire: boolean }) 
       <ControlsInit />
 
       <HookMesh params={params} center={center} />
-      <WirePreview
-        wireDiameter={params.wireDiameter}
+      <GridPreview
+        bodyLength={params.bodyLength}
         width={params.width}
+        wireDiameter={params.wireDiameter}
         offset={center}
-        show={showWire}
-      />
-
-      <Grid
-        position={[0, -(params.hookHeight * 0.8), 0]}
-        args={[160, 160]}
-        cellSize={5}
-        cellThickness={0.5}
-        cellColor="#888"
-        sectionSize={54}
-        sectionThickness={1}
-        sectionColor="#555"
-        fadeDistance={200}
-        infiniteGrid
+        gridOuter={gridOuter}
+        show={showGrid}
       />
     </>
   )
@@ -141,7 +185,8 @@ export function HookDesigner() {
       stopperEnabled,
       stopperHeight,
       stopperThickness,
-      showWire,
+      showGrid,
+      gridOuter,
     },
     set,
   ] = useControls(() => ({
@@ -149,6 +194,7 @@ export function HookDesigner() {
       wireDiameter: { value: DEFAULT_PARAMS.wireDiameter, min: 2, max: 8, step: 0.5, label: "Diameter (mm)" },
       tolerance: { value: DEFAULT_PARAMS.tolerance, min: 0, max: 2, step: 0.1, label: "Toleranse (mm)" },
       clipDepth: { value: DEFAULT_PARAMS.clipDepth, min: 6, max: 30, step: 1, label: "Klype-dybde (mm)" },
+      gridOuter: { value: 54, min: 40, max: 80, step: 0.5, label: "Rutestørrelse (mm)" },
     }),
     "Hook body": folder({
       wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 1.5, max: 8, step: 0.5, label: "Veggtykkelse (mm)" },
@@ -167,9 +213,9 @@ export function HookDesigner() {
       stopperThickness: { value: DEFAULT_PARAMS.stopperThickness, min: 1, max: 10, step: 0.5, label: "Tykkelse (mm)" },
     }),
     "Visning": folder({
-      showWire: { value: true, label: "Vis tråd" },
+      showGrid: { value: true, label: "Vis rutenett" },
     }),
-    "Reset": button(() => set({ ...DEFAULT_PARAMS, showWire: true })),
+    "Reset": button(() => set({ ...DEFAULT_PARAMS, showGrid: true, gridOuter: 54 })),
   }))
 
   const params: HookParams = {
@@ -203,7 +249,7 @@ export function HookDesigner() {
       {/* 3D viewport */}
       <div className="relative flex-1">
         <Canvas shadows className="h-full w-full" camera={{ position: [60, 50, 160], fov: 45 }}>
-          <Scene params={params} showWire={showWire} />
+          <Scene params={params} showGrid={showGrid} gridOuter={gridOuter} />
         </Canvas>
       </div>
 
