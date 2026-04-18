@@ -120,6 +120,34 @@ export function buildHookGeometry(params: HookParams): THREE.BufferGeometry {
 
   shape.closePath()                        // L → A along horizontal top
 
+  // Cut-through hole: triangular cutout flush with the back-wall-inner face, so
+  // the back wall is one continuous strip of wallThickness (spine and the wall
+  // behind the hole are the same wall). The top and diagonal edges are inset by
+  // wallThickness to leave matching walls on those sides.
+  {
+    const m   = p.wallThickness
+    const dz  = zArmTip - zBackOut
+    const dy  = yArmTop - yBodyBot
+    const len = Math.hypot(dz, dy)
+    // Offset the diagonal inward (up-left) by m:
+    const oz = zBackOut - m * dy / len
+    const oy = yBodyBot + m * dz / len
+
+    const p1z = zBackIn                          // flush with back-wall-inner
+    const p1y = yArmTop - m
+    const p2z = oz + dz * (p1y - oy) / dy        // inset-top  ∩ inset-diagonal
+    const p3y = oy + dy * (p1z - oz) / dz        // Z=zBackIn  ∩ inset-diagonal
+
+    if (p2z > p1z + 1 && p3y < p1y - 1) {
+      const hole = new THREE.Path()
+      hole.moveTo(p1z, p1y)
+      hole.lineTo(p2z, p1y)
+      hole.lineTo(p1z, p3y)
+      hole.closePath()
+      shape.holes.push(hole)
+    }
+  }
+
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: p.width,
     bevelEnabled: false,
