@@ -40,16 +40,16 @@ export const DEFAULT_PARAMS: HookParams = {
   wireDiameter: 4,
   tolerance: 0.5,
   width: 25,
-  wallThickness: 6,
-  clipWallThickness: 6,
-  clipCapHeight: 9,
-  clipOpeningDepth: 11,
-  bodyLength: 95,
+  wallThickness: 10,
+  clipWallThickness: 10,
+  clipCapHeight: 10,
+  clipOpeningDepth: 13.5,
+  bodyLength: 120,
   armLength: 100,
-  armTopOffset: 41,
+  armTopOffset: 50,
   stopperEnabled: true,
   stopperHeight: 10,
-  stopperThickness: 6,
+  stopperThickness: 10,
 }
 
 /**
