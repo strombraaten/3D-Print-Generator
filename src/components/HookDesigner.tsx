@@ -193,12 +193,12 @@ export function HookDesigner() {
       gridOuter: { value: 54, min: 40, max: 80, step: 0.5, label: "Rutestørrelse (mm)" },
     }),
     "J-klype": folder({
-      clipWallThickness: { value: DEFAULT_PARAMS.clipWallThickness, min: 2, max: 12, step: 0.5, label: "Yttervegg (mm)" },
+      clipWallThickness: { value: DEFAULT_PARAMS.clipWallThickness, min: 2, max: 20, step: 0.5, label: "Yttervegg (mm)" },
       clipCapHeight: { value: DEFAULT_PARAMS.clipCapHeight, min: 4, max: 20, step: 0.5, label: "Topphøyde (mm)" },
       clipOpeningDepth: { value: DEFAULT_PARAMS.clipOpeningDepth, min: 5, max: 25, step: 0.5, label: "Åpning nedover (mm)" },
     }),
     "Kropp": folder({
-      wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 2, max: 12, step: 0.5, label: "Bakvegg (mm)" },
+      wallThickness: { value: DEFAULT_PARAMS.wallThickness, min: 2, max: 20, step: 0.5, label: "Bakvegg (mm)" },
       bodyLength: { value: DEFAULT_PARAMS.bodyLength, min: 40, max: 150, step: 1, label: "Høyde (mm)" },
       width: { value: DEFAULT_PARAMS.width, min: 10, max: 80, step: 1, label: "Bredde (mm)" },
     }),
