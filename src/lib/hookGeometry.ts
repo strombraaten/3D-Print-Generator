@@ -88,37 +88,67 @@ export function buildHookGeometry(params: HookParams): THREE.BufferGeometry {
   const yStopTop  = yArmTop + p.stopperHeight
   const yBodyBot  = -p.bodyLength
 
+  // Silhouette polygon vertices (CCW). Every labelled corner gets a fillet
+  // below — none of these are raw polygon vertices on the final shape.
+  const A: [number, number] = [zClipOut, yCapTop]  // top-left outer of clip cap
+  const B: [number, number] = [zClipOut, yClipBot] // bottom-left of outer U-wall
+  const C: [number, number] = [zSlotOut, yClipBot] // underside of clip, inner edge
+  const D: [number, number] = [zSlotOut, 0]        // slot-left, tangent to arc
+  const E: [number, number] = [zBackOut, 0]        // slot-right, tangent to arc
+  const F: [number, number] = [zBackOut, yBodyBot] // back-wall outer bottom
+  const G: [number, number] = [zArmTip, yArmTop]   // arm-tip bottom outer
+  const H: [number, number] = [zArmTip, yStopTop]  // stopper top outer
+  const I: [number, number] = [zStopIn,  yStopTop] // stopper top inner
+  const J: [number, number] = [zStopIn,  yArmTop]  // stopper meets arm top
+  const K: [number, number] = [zBackIn,  yArmTop]  // arm top meets back-wall inner
+  const L: [number, number] = [zBackIn,  yCapTop]  // back-wall inner top
+
+  // Fillet radii. None are user-configurable — rounded corners are just how
+  // the model looks.
+  //   rCos : cosmetic convex/concave fillets on the clip + brace silhouette.
+  //   rTip : stopper-tip fillets (scale with stopper).
+  //   rArm : structural stress-relief on the arm-to-spine concave corner (K).
+  //          Matches wallThickness so it's proportional to the weakest section.
+  const rCos = Math.min(p.wallThickness, p.clipWallThickness) / 2.5
+  const rTip = Math.min(p.stopperThickness, p.stopperHeight) / 2.5
+  const rArm = p.wallThickness
+
   const shape = new THREE.Shape()
 
-  // Clip cap + outer-U wall
-  shape.moveTo(zClipOut, yCapTop)          // A: top-left of clip cap
-  shape.lineTo(zClipOut, yClipBot)         // B: outer-U wall, bottom
-  shape.lineTo(zSlotOut, yClipBot)         // C: underside of clip, inner edge
-  shape.lineTo(zSlotOut, 0)                // D: slot-left at wire-center height
+  // Start on edge LA at t1 of A's fillet. closePath() at the end will draw the
+  // final straight segment of LA from t2_of_L back to this point.
+  shape.moveTo(zClipOut + rCos, yCapTop)
 
-  // Slot ceiling — CW half-arc OVER the wire (interior material above arc)
-  shape.absarc(0, 0, wg, Math.PI, 0, true) // D → E via top
+  // Clip cap + outer-U wall (convex A, B; concave C under the clip)
+  filletCorner(shape, L, A, B, rCos)
+  filletCorner(shape, A, B, C, rCos)
+  filletCorner(shape, B, C, D, rCos)
 
-  // Back-wall outer face down to body bottom
-  shape.lineTo(zBackOut, yBodyBot)         // F
+  // Slot ceiling — CW half-arc OVER the wire. D and E are tangent to their
+  // adjacent vertical edges (no fillet needed at either).
+  shape.lineTo(D[0], D[1])
+  shape.absarc(0, 0, wg, Math.PI, 0, true)   // D → E via top
 
-  // Diagonal underside of brace up to arm tip
-  shape.lineTo(zArmTip, yArmTop)           // G
+  // Back-wall outer → diagonal brace bottom (convex F at the spine-to-brace
+  // transition). filletCorner walks us from E onto EF and into the F arc.
+  filletCorner(shape, E, F, G, rCos)
 
-  // Arm tip: optional stopper
+  // Arm tip
   if (p.stopperEnabled) {
-    shape.lineTo(zArmTip, yStopTop)        // H
-    shape.lineTo(zStopIn, yStopTop)        // I
-    shape.lineTo(zStopIn, yArmTop)         // J
+    filletCorner(shape, F, G, H, rTip)  // G: brace → arm-tip vertical
+    filletCorner(shape, G, H, I, rTip)  // H: stopper top outer
+    filletCorner(shape, H, I, J, rTip)  // I: stopper top inner
+    filletCorner(shape, I, J, K, rTip)  // J: stopper inner → arm top (concave)
+    filletCorner(shape, J, K, L, rArm)  // K: arm top → spine (concave, stress relief)
+  } else {
+    filletCorner(shape, F, G, K, rTip)  // G alone: pointed tip without stopper
+    filletCorner(shape, G, K, L, rArm)  // K: arm → spine (concave)
   }
 
-  // Arm top horizontal back to back-wall inner
-  shape.lineTo(zBackIn, yArmTop)           // K
+  // Back-wall inner top corner (convex L)
+  filletCorner(shape, K, L, A, rCos)
 
-  // Back-wall inner face up to clip cap top
-  shape.lineTo(zBackIn, yCapTop)           // L
-
-  shape.closePath()                        // L → A along horizontal top
+  shape.closePath()                      // straight along LA back to t1_of_A
 
   // Cut-through hole: triangular cutout flush with the back-wall-inner face, so
   // the back wall is one continuous strip of wallThickness (spine and the wall
@@ -159,4 +189,60 @@ export function buildHookGeometry(params: HookParams): THREE.BufferGeometry {
   geometry.applyMatrix4(new THREE.Matrix4().makeRotationY(-Math.PI / 2))
 
   return geometry
+}
+
+/**
+ * Replace a sharp polygon corner with a circular fillet tangent to both edges.
+ *
+ * Assumes the enclosing shape is traced CCW (material to the LEFT of each
+ * directed edge). Appends `lineTo(t1) + absarc(... → t2)`, so after the call
+ * the shape's pen sits at `t2` on the outgoing edge — keep using `lineTo` for
+ * the rest of that edge.
+ *
+ * Works for both convex and concave corners; the arc direction flips based on
+ * the turn sign, but the centre is always on `corner + bisector × r/sin(θ/2)`
+ * because the bisector naturally points into the interior for convex corners
+ * and out for concave ones.
+ */
+function filletCorner(
+  shape: THREE.Shape,
+  prev: [number, number],
+  corner: [number, number],
+  next: [number, number],
+  radius: number,
+): void {
+  const [px, py] = prev
+  const [cx, cy] = corner
+  const [nx, ny] = next
+
+  let v1x = px - cx, v1y = py - cy
+  const v1len = Math.hypot(v1x, v1y)
+  v1x /= v1len; v1y /= v1len
+  let v2x = nx - cx, v2y = ny - cy
+  const v2len = Math.hypot(v2x, v2y)
+  v2x /= v2len; v2y /= v2len
+
+  const cosT = Math.max(-1, Math.min(1, v1x * v2x + v1y * v2y))
+  const half = Math.acos(cosT) / 2
+
+  const tanOff = radius / Math.tan(half)
+  const t1x = cx + v1x * tanOff, t1y = cy + v1y * tanOff
+  const t2x = cx + v2x * tanOff, t2y = cy + v2y * tanOff
+
+  // Turn sign: cross(incoming, outgoing) = cross(-v1, v2). Positive = left
+  // turn = convex corner on a CCW polygon.
+  const convex = -(v1x * v2y - v1y * v2x) > 0
+
+  let bx = v1x + v2x, by = v1y + v2y
+  const blen = Math.hypot(bx, by)
+  bx /= blen; by /= blen
+  const centerDist = radius / Math.sin(half)
+  const acx = cx + bx * centerDist
+  const acy = cy + by * centerDist
+
+  const a1 = Math.atan2(t1y - acy, t1x - acx)
+  const a2 = Math.atan2(t2y - acy, t2x - acx)
+
+  shape.lineTo(t1x, t1y)
+  shape.absarc(acx, acy, radius, a1, a2, !convex)
 }
