@@ -1,182 +1,71 @@
-# Gitternett-krok – prosjektkontekst for Claude Code
+# CLAUDE.md
 
-## Hva dette er
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Et parametrisk 3D-designverktøy for å lage kroker og oppbevaring til en bod med gitternett-vegg (grid mesh). Startet i Cowork, videreføres her for å bygge det som en ordentlig webapp.
+## What this is
 
-Primær bruker: Simen (ssb@variant.no), Variant-ansatt.
+A parametric 3D hook designer for a 54×54 mm grid-mesh wall. Users tune parameters via a Leva GUI, preview the result in a Three.js viewport, and export to `.stl` or `.3mf` for slicing in Bambu Studio. Deployed at `https://3d.simenlager.no`.
 
----
+## Commands
 
-## Nåværende tilstand
-
-### Filer i dette prosjektet
-
-| Fil | Hva den gjør |
-|-----|-------------|
-| `gitternett_krok_visualisering.html` | Standalone 3D-visualisering, Three.js r128 + lil-gui UMD. Kjør direkte i nettleser. |
-| `gitternett_krok_v1.stl` | Generert 3D-modell, klar for import i Bambu Studio |
-| `gitternett_krok_v1.3mf` | Samme, men i .3mf-format (foretrukket av Bambu Studio) |
-| `generate_hook.py` | Python-script som genererer STL/3MF fra parametere (trimesh + shapely) |
-
-### Hva HTML-visualiseringen gjør
-
-- **Live 3D-preview** av kroken med lil-gui-panel til høyre
-- **Justerbare parametere**: tråddiameter, toleranse, veggtykkelse, krokk-høyde, armlengde, armtykkelse, bredde, stopper-høyde/-tykkelse
-- **Eksport direkte fra nettleseren**: knapper for `.3mf` (JSZip) og `.stl` (binær ArrayBuffer)
-- **"Kopier Python-parametere"**: kopierer gjeldende verdier til clipboard, klar til å lime inn i `generate_hook.py`
-- Viser tråd-visualisering (slå på/av)
-
-### Geometrien – kjernekonseptet
-
-Kroken genereres fra et **2D-polygon i ZY-planet** som ekstruderes i X-retningen (bredde).
-
-```
-Koordinatsystem:
-  Z = dybde (positivt = ut fra vegg, mot rom)
-  Y = høyde (positivt = opp)
-  X = bredde (ekstrusjonsretning)
-
-Tråd-sentrum = (Z=0, Y=0)
+```sh
+npm run dev        # Astro dev server (localhost:4321)
+npm run build      # Production build → /dist
+npm run preview    # Preview production build
+npm run typecheck  # Astro type check (astro check)
+npm run lint       # ESLint
+npm run format     # Prettier
 ```
 
-Profilpunktene (polygon-hjørner) definerer J-formen:
+## Architecture
 
-```javascript
-var v = [
-  [zb,  ysb],  // bakvegg, bunn-venstre
-  [zb,  yt],   // bakvegg, topp
-  [zfo, yt],   // toppkappe, høyre
-  [zfo, ybb],  // frontvegg ved arm-kryss
-  [zsi, ybb],  // arm, flate frem til stopper
-  [zsi, yst],  // stopper, indre topp
-  [zat, yst],  // stopper, ytre topp
-  [zat, yab],  // arm-spiss, bunn
-  [zfo, yab],  // arm bunn ved frontvegg
-  [zfi, yab],  // frontvegg indre, bunn
-  [zfi, wg],   // frontvegg indre, slot-topp
-  [zbi, wg],   // bakvegg indre, slot-topp
-  [zbi, ysb],  // bakvegg indre, bunn → lukker polygon
-];
-```
+**Stack:** Astro 5 + React 19 + Three.js r176 + @react-three/fiber + Leva + Tailwind v4 + shadcn/ui
 
-Tråd-spalten er **åpen nedover** (Y < -wg) – kroken senkes ned over tråden, vekten holder den på plass.
+### Geometry pipeline (`src/lib/hookGeometry.ts`)
 
-### Gitternett-spesifikasjoner
+`buildHookGeometry(params: HookParams) → THREE.BufferGeometry`
 
-- Tråddiameter: **4 mm**
-- Ruteavstand (outer): **54 × 54 mm**
-- Indre åpning: **~45 × 46 mm**
-- Nåværende toleranse i modellen: **0.5 mm** (funker bra med PLA, justerbart)
+1. Computes named Z/Y coordinates from parameters (all distances from wire center)
+2. Draws a single `THREE.Shape` CCW polygon in the ZY-plane using `lineTo` + one `absarc` for the wire slot ceiling
+3. Adds a triangular `shape.holes` cutout to save filament
+4. Calls `THREE.ExtrudeGeometry` with `depth = width`, no bevel
+5. Translates and rotates so extrusion axis = world X
 
----
+**Coordinate system:** Origin = wire center. Z = depth (positive = into room). Y = height (positive = up). X = extrusion width.
 
-## Tre ideer å jobbe videre med
+**Slot:** Open downward (Y < −wireRadius − tolerance) — hook hangs by gravity, no lock needed. The ceiling uses `absarc(0, 0, wg, Math.PI, 0, true)` where `wg = wireDiameter/2 + tolerance`.
 
-### 1. 🌐 Webapp med Leva + React Three Fiber
+### Export (`src/lib/hookExport.ts`)
 
-**Formål:** Publisere som en offentlig verktøy under `simenlager.no`-paraplyprosjektene.
+- `exportSTL`: writes binary STL (84-byte header + 50 bytes per triangle), per-face normals computed from cross product
+- `export3MF`: deduplicates vertices at 4-decimal precision → XML mesh → JSZip archive with `3D/model.model`, `_rels/.rels`, `[Content_Types].xml`
 
-**Arkitektur som gir mening:**
-- React + Vite
-- `@react-three/fiber` (R3F) for 3D-rendering
-- `leva` for parameterpanelet (samme konsept som lil-gui, men React-native og mer stylingmuligheter)
-- `@react-three/drei` for hjelpere (OrbitControls, etc.)
-- Eksport: samme JSZip/.3mf-logikk som nå, bare portert til React
+### UI (`src/components/HookDesigner.tsx`)
 
-**Hva som kan gjenbrukes:**
-- Geometrilogikken (polygon-punktene og utregningene) → porteres til JS-funksjon
-- Eksport-funksjonene (export3MF, exportSTL) → minimale endringer
-- Parametersettet
+- Leva panel owns all parameter state; `React.useMemo` rebuilds geometry on every change
+- R3F Canvas renders: `HookMesh` (orange material), `GridPreview` (cylinders toggled on/off), lights, `OrbitControls`
+- `ControlsInit` sets camera target once on mount via `useThree`
+- Three.js accesses `window` at import time → hydrated as `client:only="react"` in `index.astro`
 
-**Mulig scope-utvidelse:** Ikke bare gitternett-krok, men et generelt verktøy for småting man printer til hjemmet. Kategorier: bods-oppbevaring, kjøkken-organiser, verktøy-holder, etc.
+## Key decisions
 
-**Anbefalt verktøy i Claude Code:** compound engineering-plugin
+| Decision | Why |
+|----------|-----|
+| Astro with `client:only="react"` | Three.js references `window`/`document` on import; SSR would break it |
+| `shape.holes.push()` for cutout | Three.js handles the boolean subtract during tessellation — no CSG library needed |
+| `geometry.applyMatrix4(makeRotationY(-π/2))` | `ExtrudeGeometry` extrudes along Z by default; rotation maps it to world X |
+| JSZip for .3mf | .3mf is just a ZIP with XML inside; no dedicated library required |
+| Vertex deduplication at 4 decimal places | Reduces 3MF file size and ensures clean mesh import in Bambu Studio |
 
----
+## Grid-mesh specifications
 
-### 2. 🔵 Avrundet tråd-spalte (semi-sirkulær kanal)
+- Wire diameter: **4 mm** (default `wireDiameter`)
+- Grid pitch: **54 × 54 mm** outer
+- Inner opening: **~45 × 46 mm**
+- Working tolerance: **0.5 mm** (default `tolerance`) — tested with PLA
 
-**Problem:** Firkantet spalte mot rund tråd → punktkontakt i to skarpe hjørner. Dårlig kraftfordeling, potensielt slitasje på tråden.
+## Future work (unprioritized)
 
-**Løsning:** Erstatt de to rette hjørnene i bunnen av spalten med en halvsirkel:
-
-```python
-# I stedet for:
-# [z_back_inner, y_slot_bot], ..., [z_front_inner, y_slot_bot]
-
-# Legg til halvsirkelbue med radius = wire_r + tol
-# Senter: (0, y_slot_bot + wire_r + tol) = (0, 0)  ← dvs. tråd-sentrum
-# Buen går fra vinkel 180° til 0° (undre halvdel)
-```
-
-I Shapely brukes `arc`-tilnærming via `Polygon` med mange punkter, eller man bruker `shapely.geometry.Point(0, 0).buffer(wire_r + tol)` og klipper.
-
-I Three.js: `THREE.Shape` støtter `absarc()` direkte i profilen.
-
-**Effekt:** Linjeformet kontakt langs hele krokens bredde → sterkere, penere, mer skånsomt mot tråden.
-
----
-
-### 3. 🏗️ Styrkeanalyse + materialoptimalisering
-
-**Problemstilling:** Vil ha sterk krok uten å bruke unødvendig mye PLA.
-
-**Analytisk tilnærming (bjelketeori):**
-
-Armen er en utkraget bjelke (cantilever). Bøyemomentet i roten av armen:
-
-```
-M = F × L
-σ = M × c / I
-
-der:
-  F = last (vekt av klappstol, typisk 5–10 kg → 50–100 N)
-  L = arm_lengde (50 mm = 0.05 m)
-  c = arm_tykkelse / 2 (avstand fra nøytralaksen til ytterflaten)
-  I = (bredde × arm_tykkelse³) / 12  (annet arealmoment, rektangulær tverrsnitt)
-  σ = bøyespenning
-```
-
-PLA har typisk bruddstyrke **~50 MPa**, men FDM-print er ~60–70% av dette → effektiv styrke **~30–35 MPa**.
-
-**Kritiske punkter i denne modellen:**
-1. Rot av arm (bøyemoment fra vekten)
-2. Rot av J-klyp (torsjon + skjærkraft fra tråden)
-
-**Enkel forbedring uten mer materiale:** Avrunde overgangen arm↔kropp (filet-radius ~5–8 mm) for å spre spenningskonsentrasjonen.
-
-**Kan bygges som kalkulator** ved siden av 3D-vieweren – input: forventet last, output: beregnet spenning vs. kapasitet med go/no-go-indikator.
-
----
-
-## Tekniske beslutninger tatt (og hvorfor)
-
-| Beslutning | Hvorfor |
-|-----------|---------|
-| Three.js r128 (ikke nyere) | cdnjs har r128 som stabil CDN-versjon uten bundler |
-| lil-gui UMD (ikke Leva) | Leva krever React; lil-gui er vanilla JS, CDN-tilgjengelig |
-| `type="module"` unngått | ES-moduler fra CDN blokkeres av CORS på `file://` |
-| JSZip for .3mf | .3mf er bare ZIP med XML inni; ingen ekstern lib nødvendig utover JSZip |
-| `hookMesh.position.z` for sentrering | `BufferGeometry.translate()` er read-only i r128; sett offset på mesh i stedet |
-| `wireMesh.rotation.x = Math.PI/2` | CylinderGeometry langs Y; rotation.x legger den langs Z (bredderetningen) |
-| Polygon åpen nedover | Kroken senkes ned over tråden → gravity-hold, ingen lås nødvendig |
-
----
-
-## Neste naturlige steg (prioritert)
-
-1. **Port til React + R3F + Leva** → Webapp-klar versjon
-2. **Semi-sirkulær tråd-spalte** → Liten geometri-endring, stor funksjonell forbedring
-3. **Styrke-kalkulator** → Viser om valgte dimensjoner holder for gitt last
-4. **Oppdater `generate_hook.py`** med stopper-geometrien (er i HTML men ikke i Python-scriptet ennå)
-5. **Publiser** under simenlager.no via variant-deploy-plugin
-
----
-
-## Relevante ressurser
-
-- [Leva docs](https://github.com/pmndrs/leva/blob/main/docs/getting-started/introduction.md)
-- [React Three Fiber](https://docs.pmnd.rs/react-three-fiber)
-- [3MF-spesifikasjon](https://3mf.io/specification/)
-- [Bambu Studio](https://bambulab.com/en/download/studio) – sliceren som brukes
+- Semi-circular wire slot: replace square slot bottom with `absarc` for line contact instead of point contact
+- Strength calculator: cantilever beam formula (M = F×L, σ = M×c/I) as a sidebar showing go/no-go for given load
+- General-purpose tool scope: categories beyond grid-hook (kitchen organizer, tool holder, etc.)
